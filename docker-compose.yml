@@ -1,0 +1,220 @@
+version: "3.9"
+
+# ══════════════════════════════════════════════════════════════
+#  Interview Platform — Docker Compose
+#
+#  Сервисы:
+#    mongodb   — MongoDB (ML-результаты)
+#    redis     — Redis (кэш)
+#    rabbitmq  — RabbitMQ (очереди задач)
+#    ollama    — Ollama LLM (llama3)
+#    audio     — Audio Analysis API (порт 8000)
+#    hr        — HR AI Analyzer API (порт 8001)
+#    text_worker — RabbitMQ-воркер для LLM-анализа
+#    frontend  — Nginx UI (порт 3000)
+# ══════════════════════════════════════════════════════════════
+
+networks:
+  platform:
+    driver: bridge
+
+volumes:
+  mongo_data:
+  redis_data:
+  rabbitmq_data:
+  ollama_data:
+  audio_storage:
+
+# ── Общие переменные окружения (секреты берутся из .env рядом с этим файлом) ──
+x-db-env: &db-env
+  MONGO_URI: ${MONGO_URI}
+  MONGO_DB_NAME: ${MONGO_DB_NAME:-interview_platform}
+  SUPABASE_URL: ${SUPABASE_URL}
+  SUPABASE_KEY: ${SUPABASE_KEY}
+  REDIS_URL: redis://redis:6379/0
+  RABBITMQ_URL: amqp://guest:guest@rabbitmq:5672/
+
+services:
+
+  # ── Redis ────────────────────────────────────────────────
+  redis:
+    image: redis:7-alpine
+    container_name: platform_redis
+    restart: unless-stopped
+    volumes:
+      - redis_data:/data
+    networks:
+      - platform
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ── RabbitMQ ─────────────────────────────────────────────
+  rabbitmq:
+    image: rabbitmq:3.13-management-alpine
+    container_name: platform_rabbitmq
+    restart: unless-stopped
+    environment:
+      RABBITMQ_DEFAULT_USER: guest
+      RABBITMQ_DEFAULT_PASS: guest
+    ports:
+      - "5672:5672"
+      - "15672:15672"   # Management UI
+    volumes:
+      - rabbitmq_data:/var/lib/rabbitmq
+    networks:
+      - platform
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "ping"]
+      interval: 15s
+      timeout: 10s
+      retries: 10
+
+  # ── Ollama (LLM) ─────────────────────────────────────────
+  ollama:
+    image: ollama/ollama:latest
+    container_name: platform_ollama
+    restart: unless-stopped
+    volumes:
+      - ollama_data:/root/.ollama
+    networks:
+      - platform
+    # GPU support (раскомментировать при наличии NVIDIA GPU):
+    # deploy:
+    #   resources:
+    #     reservations:
+    #       devices:
+    #         - driver: nvidia
+    #           count: 1
+    #           capabilities: [gpu]
+    healthcheck:
+      test: ["CMD", "ollama", "list"]
+      interval: 30s
+      timeout: 15s
+      retries: 10
+      start_period: 60s
+
+  # ── Audio Module ──────────────────────────────────────────
+  audio:
+    build:
+      context: ./audio_module
+      dockerfile: Dockerfile
+    container_name: platform_audio
+    restart: unless-stopped
+    environment:
+      <<: *db-env
+      STORAGE_PROVIDER: local_dev
+      STORAGE_BASE_PATH: /app/storage
+      AUDIO_QUEUE_NAME: audio_analysis_queue
+      TEXT_QUEUE_NAME: text_analysis_queue
+    ports:
+      - "8000:8000"
+    volumes:
+      - audio_storage:/app/storage
+    networks:
+      - platform
+    depends_on:
+      redis:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
+
+  # ── Audio Worker (RabbitMQ consumer) ─────────────────────
+  audio_worker:
+    build:
+      context: ./audio_module
+      dockerfile: Dockerfile
+    container_name: platform_audio_worker
+    restart: unless-stopped
+    command: ["python", "-m", "app.workers.audio_worker"]
+    environment:
+      <<: *db-env
+      STORAGE_PROVIDER: local_dev
+      STORAGE_BASE_PATH: /app/storage
+      AUDIO_QUEUE_NAME: audio_analysis_queue
+      TEXT_QUEUE_NAME: text_analysis_queue
+    volumes:
+      - audio_storage:/app/storage
+    networks:
+      - platform
+    depends_on:
+      redis:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+
+  # ── HR AI Analyzer API ────────────────────────────────────
+  hr:
+    build:
+      context: ./hr-ai-analyzer
+      dockerfile: Dockerfile
+    container_name: platform_hr
+    restart: unless-stopped
+    environment:
+      <<: *db-env
+      TEXT_QUEUE_NAME: text_analysis_queue
+      OLLAMA_URL: http://ollama:11434/api/generate
+      OLLAMA_MODEL: llama3
+    ports:
+      - "8001:8001"
+    networks:
+      - platform
+    depends_on:
+      redis:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+      ollama:
+        condition: service_started
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8001/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+
+  # ── Text Worker (RabbitMQ consumer → LLM) ────────────────
+  text_worker:
+    build:
+      context: ./hr-ai-analyzer
+      dockerfile: Dockerfile
+    container_name: platform_text_worker
+    restart: unless-stopped
+    command: ["python", "-m", "app.workers.text_worker"]
+    environment:
+      <<: *db-env
+      TEXT_QUEUE_NAME: text_analysis_queue
+      OLLAMA_URL: http://ollama:11434/api/generate
+      OLLAMA_MODEL: llama3
+    networks:
+      - platform
+    depends_on:
+      redis:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+      ollama:
+        condition: service_started
+
+  # ── Frontend (Nginx) ──────────────────────────────────────
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: platform_frontend
+    restart: unless-stopped
+    ports:
+      - "3000:80"
+    networks:
+      - platform
+    depends_on:
+      - audio
+      - hr

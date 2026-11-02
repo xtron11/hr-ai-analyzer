@@ -1,0 +1,28 @@
+torch==2.1.2
+torchaudio==2.1.2
+speechbrain>=1.0.0
+huggingface-hub==0.16.4
+transformers==4.33.3
+hyperpyyaml==1.2.2
+numpy==1.26.4
+fastapi==0.110.2
+uvicorn[standard]==0.29.0
+python-multipart==0.0.9
+praat-parselmouth==0.4.4
+silero-vad==6.2.0
+faster-whisper==1.0.3
+opensmile==2.5.0
+
+# ── Database & Infrastructure ─────────────────────────────
+motor==3.6.0                # Async MongoDB driver
+pymongo==4.9.0              # MongoDB (motor dependency)
+supabase==2.11.0            # Supabase Python client
+python-dotenv==1.0.1        # .env loading
+pydantic-settings==2.7.0    # Settings management
+
+# ── Caching & Queues ─────────────────────────────────────
+redis[hiredis]==5.2.1       # Redis client (async)
+aio-pika==9.5.3             # RabbitMQ async client (AMQP)
+
+# ── Object Storage (опционально, для S3/MinIO) ───────────
+# boto3==1.35.0             # Раскомментировать для S3/MinIO

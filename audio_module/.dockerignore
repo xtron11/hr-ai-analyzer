@@ -1,0 +1,26 @@
+venv/
+__pycache__/
+**/__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.pytest_cache/
+.vscode/
+
+# Кэши ML-моделей (скачиваются заново при старте контейнера)
+wav2vec2_checkpoints/
+pretrained_models/
+
+# Результаты предыдущих запусков
+results/
+storage/
+*.json
+
+# Временные файлы
+*.tmp
+*.wav
+*.mp4
+
+.env
+.git/
+*.md

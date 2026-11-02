@@ -1,0 +1,54 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Виртуальные окружения
+venv/
+venv*/
+.venv/
+env/
+
+# Секреты и локальные настройки
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+
+# IDE / ОС
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Логи
+*.log
+logs/
+
+# Локальные окружения Windows/WSL
+venv_win/
+venv_local/
+.wslconfig
+.claude/
+__MACOSX/
+
+# Модели (скачиваются автоматически)
+wav2vec2_checkpoints/
+pretrained_models/
+
+# Записи интервью и результаты анализа (персональные данные)
+audio_module/storage/
+audio_module/results/
+results/
+*.mp4
+*.wav
+*.mp3
+*.m4a
+
+# Черновой тест на несуществующие модули
+1.py
